@@ -1,0 +1,107 @@
+def generateFailStage(nodeLabel) {
+    stage("Runs on ${nodeLabel}") {
+        node {
+            catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                sh '''
+                    exit 1
+                '''
+            }
+        }
+    }
+}
+
+def generateStage(nodeLabel) {
+    stage("Runs on ${nodeLabel}") {
+        node(nodeLabel) {
+            sh '''
+                #!/bin/sh
+                pdservName=`echo ${pdservName} | sed "s/ //g"`
+                Email_Destination=`echo $Email_Destination | sed 's/ //g'`
+                
+                ( ps -ef | grep -i ${pdservName} | grep -v grep > test.txt ) || true
+                pwd
+                ls -lrt
+                if [ ! -s test.txt ] ; then
+                    echo "No ${pdservName} process found."
+                    rm -f test.txt
+                    exit 0
+                fi
+                if [ -z "$Email_Destination" ] ; then
+                    cat test.txt
+                    rm -f test.txt
+                    exit 0
+                fi
+                (
+                    echo "To: $Email_Destination"
+                    echo "Subject:Output of the Server Process $(hostname)"
+                    echo "Content-Type: text/html"
+                    echo "<html><p style="font-size:20px"> <b>Date and time of script execution :</b> $(date)</p>"
+                    echo "<p style="font-size:20px"><br><b>Server name :</b> $(hostname)</p>"
+                    count=1
+                    initc=1
+                    cat test.txt | while read C1UID C2PID C3PPID C4C C5STIME C6TTY C7TIME C8CMD; do
+                        if [ $count == $initc ]
+                        then
+                            echo " <table border=\"1\"><tr style="background-color:#FFFF00"> <th>UID</th> <th>PID</th> <th>PPID</th> <th>C</th> <th>STIME</th> <th>TTY</th> <th>TIME</th> <th>CMD</th> </tr>"
+                        else
+                            echo "<tr> <td>$C1UID</td> <td>$C2PID</td> <td>$C3PPID</td> <td>$C4C</td> <td>$C5STIME</td> <td>$C6TTY</td> <td>$C7TIME</td> <td>$C8CMD</td> </tr>"
+                        fi
+                    	count=`expr $count + 1`
+                    done 
+                    
+                    echo "</table></html>"
+                ) | /usr/sbin/sendmail -t
+                rm -f test.txt
+            '''
+        }
+    }
+}
+
+pipeline {
+    agent none
+    stages {
+        stage('Run') {
+            steps {
+                script {
+                    def dev_nodes = ["PRT_CPL_IPW_a01_DEV"]
+                    if (SDLC == 'dev') {
+                        for (node in dev_nodes ) {
+                            echo "${SDLC}_nodes"
+                            echo 'NodeName ' + node
+                            if (nodesByLabel (node) ) {
+                                generateStage(node)
+                            } else {
+                                generateFailStage(node)
+//                              mail bcc: '', body: 'Node '+node+' is offline and the command cannot be run.', cc: '', from: '', replyTo: '', subject: node+' offline.', to: Email_Destination
+                            }
+                        }
+                    }
+                    
+                    def qa_nodes = ["eiqsprta01"]
+                    if (SDLC == 'qa') {
+                        for (node in qa_nodes ) {
+                            echo "${SDLC}_nodes"
+                            echo 'NodeName' + node
+                            generateStage(node)
+                        }
+                    }
+                    
+                    // def prd_nodes = ['PRT_CPL_IPM_a01', 'PRT_CPL_IPM_a02', 'PRT_EDG_IPM_a01', 'PRT_EDG_IPM_a02', 'PRT_EDG_IPM_a03', 'PRT_EDG_IPM_a04', 'PRT_EDG_IPM_a05', 'PRT_EDG_IPM_a06', 'PRT_EDG_IPM_a07']
+                    def prd_nodes = ['eppsprta01', 'eppsprta02', 'eppsprta03', 'eppsprta04', 'eppsprta05', 'eppsprta06', 'eppsprta07', 'cpppsuprta01', 'cpppsuprta02' ]
+                    if (SDLC == 'prd') {
+                        for (node in prd_nodes ) {
+                            echo "${SDLC}_nodes"
+                            echo 'NodeName ' + node
+                            if (nodesByLabel (node) ) {
+                                generateStage(node)
+                            } else {
+                                generateFailStage(node)
+//                              mail bcc: '', body: 'Node '+node+' is offline and the command cannot be run.', cc: '', from: '', replyTo: '', subject: node+' offline.', to: Email_Destination
+                            }
+                        }
+					}
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,147 @@
+def generateFailStage(nodeLabel) {
+    stage("Runs on ${nodeLabel}") {
+        node {
+            catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                sh '''
+                    exit 1
+                '''
+            }
+        }
+    }
+}
+def generateStage(nodeLabel) {
+    stage("Runs on ${nodeLabel}") {
+        node(nodeLabel) {
+            catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                sh '''
+#!/bin/sh
+[ ${SDLC} == "int" ] && exit 0
+
+rc=0
+( df -gt || rc=$? ) > test.txt
+pwd
+ls -lrta
+if [ -z ${Email_Destination} ] ; then
+    cat test.txt
+    rm -f test.txt
+    exit 0
+fi
+(
+echo "To: `echo $Email_Destination | sed 's/ //g'`"
+echo "Subject:Output of the Server $(hostname)"
+echo "Content-Type: text/html"
+echo "<html><p style="font-size:20px"> <b>Date and time of script execution :</b> $(date)</p>"
+echo "<p style="font-size:20px"><br><b>Server name :</b> $(hostname)</p>"
+if [ $rc != 0 ] ; then
+    echo "<p style="font-size:20px"><br><b>Warning! </b> df -gt command exited with non-zero return code = ${rc}</p>"
+fi
+count=1
+initc=1
+#!/bin/bash
+cat test.txt | while read C1FS C2GB C3US C4FR C5PU C6MO; do
+if [ $count == $initc ]
+then
+echo " <table border=\"1\"><tr style="background-color:#90EE90"> <th>FILESYSTEM</th> <th>GB_BLOCKS</th> <th>USED</th> <th>FREE</th> <th>%USED</th> <th>MOUNTED_ON</th> </tr>"
+
+else
+
+var80=$(echo "$C5PU" | tr -d %)
+comp80=80
+comp90=90
+
+if [ $var80 -ge $comp80 ] && [ $var80 -lt $comp90 ]
+then
+  echo "<tr style="background-color:#FFFF00"> <td>$C1FS</td> <td>$C2GB</td> <td>$C3US</td> <td>$C4FR</td> <td>$C5PU</td> <td>$C6MO</td> </tr>"
+
+
+elif [ $var80 -ge $comp90 ]
+then
+  echo "<tr style="background-color:#FF3333"> <td>$C1FS</td> <td>$C2GB</td> <td>$C3US</td> <td>$C4FR</td> <td>$C5PU</td> <td>$C6MO</td> </tr>"
+
+else
+
+ echo "<tr> <td>$C1FS</td> <td>$C2GB</td> <td>$C3US</td> <td>$C4FR</td> <td>$C5PU</td> <td>$C6MO</td> </tr>"   
+fi
+
+fi
+	count=`expr $count + 1`
+done 
+
+echo "</table></html>"
+
+) | /usr/sbin/sendmail -t
+
+rm -f test.txt
+                '''
+            }
+        }
+    }
+}
+
+pipeline {
+    agent none
+    stages {
+        stage('Start') {
+            steps {
+                script {
+//                  def dev_nodes = ["PRT_CPL_IPW_a01_DEV"]
+                    def dev_nodes = ["cpidluprtd01"]
+//                  def qa_nodes =  ['PRT_EDG_IPM_a01_QA', 'PRT_EDG_IPW_d01_QA', 'PRT_EDG_EXP_x01_QA']
+                    def qa_nodes =  ["eiqsprtx01", "eiqsprtd01", "eiqsprta01" ]
+//                  def uat_nodes = ['PRT_EDG_IPW_d01_UAT']
+                    def uat_nodes = ['ediusprtd01', 'eiqsprtd01']
+//                  def prd_nodes = ['PRT_CPL_IPW_d01', 'PRT_CPL_IPW_d02', 'PRT_CPL_XEN_a01', 'PRT_CPL_IPM_a01', 'PRT_CPL_IPM_a02', 'PRT_EDG_COM_a03', 'PRT_EDG_COM_a04', 'PRT_EDG_IPM_a01', 'PRT_EDG_IPM_a02', 'PRT_EDG_IPM_a03', 'PRT_EDG_IPM_a04', 'PRT_EDG_IPM_a05', 'PRT_EDG_IPM_a06', 'PRT_EDG_IPM_a07', 'PRT_EDG_IPW_d01', 'PRT_EDG_IPW_d02', 'PRT_EDG_EXP_x01', 'PRT_EDG_EXP_x02', 'PRT_CLF_IPW_d01', 'PRT_CLF_IPW_d02', 'PRT_CLF_IPW_d04_DR', 'PRT_CLF_IPW_d03_DR']
+                    def prd_nodes = ['eppsprtd01', 'eppsprtd02', 'eppsprta01', 'eppsprta02', 'eppsprta03', 'eppsprta04', 'eppsprta05', 'eppsprta06', 'eppsprta07', 'eppsprtx01', 'eppsprtx02', 'edlpcuprta03', 'edlpcuprta04', 'jppsprtd01', 'jppsprtd02', 'jsppsuprtd03', 'jsppluprtd04', 'cpppcuprtd01', 'cpppcuprtd02', 'cpppsuprta01', 'cpppsuprta02', 'cpppluxena01']
+                    if (SDLC == 'dev') {
+                        for (node in dev_nodes ) {
+                            echo "${SDLC}_nodes"
+                            echo 'NodeName ' + node
+                            if (nodesByLabel (node) ) {
+                                generateStage(node)
+                            } else {
+                                generateFailStage(node)
+//                              mail bcc: '', body: 'Node '+node+' is offline and the command cannot be run.', cc: '', from: '', replyTo: '', subject: node+' offline.', to: Email_Destination
+                            }
+                        }
+                    }
+                    if (SDLC == 'qa') {
+                        for (node in qa_nodes ) {
+                            echo "${SDLC}_nodes"
+                            echo 'NodeName ' + node
+                            if (nodesByLabel (node) ) {
+                                generateStage(node)
+                            } else {
+                                generateFailStage(node)
+//                              mail bcc: '', body: 'Node '+node+' is offline and the command cannot be run.', cc: '', from: '', replyTo: '', subject: node+' offline.', to: Email_Destination
+                            }
+                        }
+                    }
+                    if (SDLC == 'uat') {
+                        for (node in uat_nodes ) {
+                            echo "${SDLC}_nodes"
+                            echo 'NodeName ' + node
+                            if (nodesByLabel (node) ) {
+                                generateStage(node)
+                            } else {
+                                generateFailStage(node)
+//                              mail bcc: '', body: 'Node '+node+' is offline and the command cannot be run.', cc: '', from: '', replyTo: '', subject: node+' offline.', to: Email_Destination
+                            }
+                        }
+                    }
+                    if (SDLC == 'prd') {
+                        for (node in prd_nodes ) {
+                            echo "${SDLC}_nodes"
+                            echo 'NodeName ' + node
+                            if (nodesByLabel (node) ) {
+                                generateStage(node)
+                            } else {
+                                generateFailStage(node)
+//                              mail bcc: '', body: 'Node '+node+' is offline and the command cannot be run.', cc: '', from: '', replyTo: '', subject: node+' offline.', to: Email_Destination
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
